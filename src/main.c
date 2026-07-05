@@ -14,9 +14,10 @@ void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
 static const GpioPin LED    =   { GPIOC, GPIO_Pin_1, 1 }; 
 static const GpioPin GREEN  =   { GPIOC, GPIO_Pin_2, 1 }; 
 static const GpioPin YELLOW =   { GPIOC, GPIO_Pin_3, 1 }; 
+static const GpioPin PILOT  =   { GPIOC, GPIO_Pin_4, 1 };
 // ActiveHighなLEDの定義。Port---LED---GNDという接続。gpio_write(&LED, 1)で点灯、gpio_write(&LED, 0)で消灯。
 // ActiveLowにしたい場合は最後の値を0にして、Port---LED---VDDという接続にします。gpio_write(&LED, 1)で消灯、gpio_write(&LED, 0)で点灯になります。
-static const GpioPin BUTTON = { GPIOC, GPIO_Pin_4, 0 };
+static const GpioPin BUTTON = { GPIOC, GPIO_Pin_5, 0 };
 // ActiveLowなボタンの定義。Port---BUTTON---GNDという接続。押されるとGNDに落ちて論理値1になります。
 // ActiveHighにしたい場合は最後の値を1にします。この場合はPort---BUTTON---VDDという接続になります。押されるとVDDに繋がって論理値1になります。
 
@@ -24,6 +25,7 @@ void gpio_helper_init(){
     gpio_init(&LED,       GPIO_DIR_OUT);
     gpio_init(&GREEN,     GPIO_DIR_OUT);
     gpio_init(&YELLOW,    GPIO_DIR_OUT);
+    gpio_init(&PILOT,     GPIO_DIR_OUT);
     gpio_init(&BUTTON,    GPIO_DIR_IN);
 }
 
@@ -38,9 +40,9 @@ void gpio_helper_init(){
     ds18b20_init();
     gpio_helper_init();
     //
-    gpio_write(&LED, 1);        // LED Turn-ON(to High)
+    gpio_write(&PILOT, 1);        // LED Turn-ON(to High)
     gpio_wait_on(&BUTTON, 3000);
-    gpio_write(&LED, 0);
+    gpio_write(&PILOT, 0);
 //    gpio_wait_off(&BUTTON, 0);
     //
     usart_io_init(115200);
