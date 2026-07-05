@@ -39,11 +39,10 @@ void gpio_helper_init(){
     gpio_helper_init();
     //
     gpio_write(&LED, 1);        // LED Turn-ON(to High)
-    gpio_wait_on(&BUTTON, 0);
+    gpio_wait_on(&BUTTON, 3000);
     gpio_write(&LED, 0);
-    gpio_wait_off(&BUTTON, 0);
+//    gpio_wait_off(&BUTTON, 0);
     //
-//    USART_Printf_Init(115200);
     usart_io_init(115200);
     Delay_Ms(20);
     printf("Startup system clock: %lu Hz\n", SystemCoreClock);
