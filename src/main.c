@@ -14,8 +14,8 @@ void HardFault_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
  */
 
 static const GpioPin RED_LED    =   { GPIOC, GPIO_Pin_1, 1 }; 
-static const GpioPin GREEN_LED  =   { GPIOC, GPIO_Pin_2, 1 }; 
-static const GpioPin YELLOW_LED =   { GPIOC, GPIO_Pin_3, 1 }; 
+static const GpioPin YELLOW_LED =   { GPIOC, GPIO_Pin_2, 1 }; 
+static const GpioPin GREEN_LED  =   { GPIOC, GPIO_Pin_3, 1 }; 
 static const GpioPin PILOT_LED  =   { GPIOC, GPIO_Pin_4, 1 };
 static const GpioPin BUTTON = { GPIOC, GPIO_Pin_5, 0 };
 // ActiveHighなLEDの定義。Port---LED---GNDという接続。gpio_write(&LED, 1)で点灯、gpio_write(&LED, 0)で消灯。
@@ -26,8 +26,8 @@ static const GpioPin BUTTON = { GPIOC, GPIO_Pin_5, 0 };
 
 void gpio_helper_init(){
     gpio_init(&RED_LED,       GPIO_DIR_OUT);
-    gpio_init(&GREEN_LED,     GPIO_DIR_OUT);
     gpio_init(&YELLOW_LED,    GPIO_DIR_OUT);
+    gpio_init(&GREEN_LED,     GPIO_DIR_OUT);
     gpio_init(&PILOT_LED,     GPIO_DIR_OUT);
     gpio_init(&BUTTON,        GPIO_DIR_IN);
 }
@@ -58,8 +58,8 @@ ds18b20_rom_t system_startup(){
     }
     printf("Command: 'T' or 't' to read temperature.\n");
     printf("Command: 'R' to Red    LED ON, 'r' to Red    LED OFF.\n");
-    printf("Command: 'G' to Green  LED ON, 'g' to Green  LED OFF.\n");
     printf("Command: 'Y' to Yellow LED ON, 'y' to Yellow LED OFF.\n");
+    printf("Command: 'G' to Green  LED ON, 'g' to Green  LED OFF.\n");
     printf("Command: 'Q' or 'q' to quit and restart this program.\n");
     printf("ROM ID: %02X-%02X-%02X-%02X-%02X-%02X-%02X-%02X\n",
            rom.id[0], rom.id[1], rom.id[2], rom.id[3],
@@ -103,18 +103,18 @@ int main(void) {
                 } else if ((*lptr) == 'r') {
                     gpio_write(&RED_LED, 0);
                     printf("Red LED OFF\n");
-                } else if((*lptr) == 'G') {
-                    gpio_write(&GREEN_LED, 1);
-                    printf("Green LED ON\n");
-                } else if ((*lptr) == 'g') {
-                    gpio_write(&GREEN_LED, 0);
-                    printf("Green LED OFF\n");
                 } else if((*lptr) == 'Y') {
                     gpio_write(&YELLOW_LED, 1);
                     printf("Yellow LED ON\n");
                 } else if ((*lptr) == 'y') {
                     gpio_write(&YELLOW_LED, 0);
                     printf("Yellow LED OFF\n");
+                } else if((*lptr) == 'G') {
+                    gpio_write(&GREEN_LED, 1);
+                    printf("Green LED ON\n");
+                } else if ((*lptr) == 'g') {
+                    gpio_write(&GREEN_LED, 0);
+                    printf("Green LED OFF\n");
                 } else if (toupper(*lptr) == 'Q') {
                     printf("Restart by user request...\n");
                     continue_request = false;
