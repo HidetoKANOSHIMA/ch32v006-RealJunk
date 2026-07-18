@@ -75,11 +75,19 @@ void put_serial_startup_message(ds18b20_rom_t *rom){
 /**
  * 温度センサの値をシリアルで上記に送る
  */
-void put_serial_temperature(ds18b20_rom_t rom, int16_t  raw){
+void put_serial_temperature(ds18b20_rom_t rom){
+    int16_t  raw;
     int32_t  temp_hund;
     uint8_t  err;
     printf("Reading temperature on demand...\n");
     err = ds18b20_read_temp_raw(&rom, &raw);
+    if (err == DS_OK) {
+        printf("Raw temperature: %d (1LSB=1/16C)\n", raw);
+    } else {
+        printf("Temperature read error: %d\n", err);
+        return;
+    }
+    temp_hund = ds18b20_raw_to_hundredths(raw);
     // 負温度対応: 絶対値に分解してprintf
     if (temp_hund < 0) {
         printf("TEMP = -%ld.%02ld C\n",
@@ -141,7 +149,6 @@ unsigned char *put_LED_dance(unsigned char *lptr){
  */
 int main(void) {
     ds18b20_rom_t rom;
-    int16_t  raw;
     int32_t  temp_hund;
     uint8_t  err;
     bool     loop_exit_request = false;
@@ -157,10 +164,12 @@ int main(void) {
             printf("Received: %s\n", lptr);
             while (lptr < (line + len)) {
                 if (toupper(*lptr) == 'T') {
-                    put_serial_temperature(rom, raw);
+                    put_serial_temperature(rom);
+                    lptr++;
                 } else if (toupper(*lptr) == 'Q') {
                     printf("Restart by user request...\n");
                     loop_exit_request = true;
+                    lptr++;
                  } else {
                     lptr = put_LED_dance(lptr);
                 }
