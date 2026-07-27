@@ -56,4 +56,3 @@ graph TD
     style 部屋A fill:#f4f4f4,stroke:#333,stroke-width:1px
     style 部屋B fill:#eef2f7,stroke:#333,stroke-width:1px
 ```
-    

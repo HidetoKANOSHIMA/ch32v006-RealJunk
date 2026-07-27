@@ -6,8 +6,11 @@
 動作環境: macOS (Tahoe) / Mac mini M4
 接続構成: Mac mini M4 <--USBシリアル変換基板--> CH32V006 マイコン基板 <--> 温度センサ / LED(赤・黄・緑)
 
-■ マイコン基板側の仕様(前提)
-  'T' 受信 -> 温度をシリアルへ返信 (例: "27,5" -> 27.5℃)
+■ マイコン基板側の仕様(実機で確認した実際の挙動)
+  コマンドは改行(\n)付きの1行として送信する必要がある(改行を受信して1行分の
+  コマンド列として認識・処理される)。
+  'T' 受信 -> デバッグメッセージを含む複数行を出力し、その中に
+              "TEMP = 23.43 C" のような行で温度が含まれる
   'R'/'r'  -> LED-RED   点灯/消灯
   'Y'/'y'  -> LED-YELLOW 点灯/消灯
   'G'/'g'  -> LED-GREEN 点灯/消灯
@@ -28,12 +31,13 @@
 
 ※ ボーレートはマイコン側ファームウェアの設定に合わせて --baud で調整してください
   (デフォルトは一般的な 115200 を想定しています)。
-※ マイコンからの温度応答は改行区切り(例: "27,5\\n")を想定しています。
-  実機のファームウェアが異なる終端文字を使う場合は read_temperature() を調整してください。
+※ コマンドは改行(\\n)を付けて1行として送信します。
+※ 'T'応答は複数行のデバッグ出力で、"TEMP = 23.43 C" 行から正規表現で温度を抽出します。
 """
 
 import argparse
 import glob
+import re
 import statistics
 import sys
 import time
@@ -52,10 +56,16 @@ except ImportError:
 # 設定値
 # ----------------------------------------------------------------------------
 DEFAULT_BAUDRATE = 115200      # マイコン側ファームウェアに合わせて要調整
-SERIAL_TIMEOUT = 3.0           # 応答待ちタイムアウト(秒)
+SERIAL_TIMEOUT = 0.2           # read()の1回あたりの待ち時間(秒、ポーリング用)
+RESPONSE_MAX_WAIT = 5.0        # 応答収集の最大待ち時間(秒)
+RESPONSE_QUIET_GAP = 0.4       # これだけ新規データが来なければ応答完了とみなす(秒)
 MEASURE_INTERVAL = 10.0        # 定常監視時の測定間隔(秒)
 INITIAL_SAMPLE_COUNT = 3       # 起動時キャリブレーションの測定回数
 BLINK_UNIT_SEC = 1.0           # マイコン側 '#' の休止時間(秒) = 1000ms
+LINE_ENDING = "\n"             # コマンド送信時に付加する改行コード
+
+# 'T'応答の中から温度を抜き出す正規表現 (例: "TEMP = 23.43 C" -> 23.43)
+TEMP_PATTERN = re.compile(r"TEMP\s*=\s*(-?\d+(?:\.\d+)?)\s*C", re.IGNORECASE)
 
 # 3回点滅コマンド列(仕様書の例をそのまま使用)
 BLINK_RED = "R#r#R#r#R#r"
@@ -100,36 +110,70 @@ class McuLink:
         if self.ser and self.ser.is_open:
             self.ser.close()
 
-    def _write(self, text: str):
-        self.ser.write(text.encode("ascii"))
+    def _write_line(self, command: str):
+        """コマンド文字列に改行を付加して送信する(改行受信で1行として認識される仕様のため)"""
+        self.ser.write((command + LINE_ENDING).encode("ascii"))
         self.ser.flush()
 
-    def read_temperature(self) -> float:
-        """'T'コマンドを送信し、応答("27,5"のような文字列)を温度(float)に変換して返す"""
-        self.ser.reset_input_buffer()
-        self._write("T")
+    def _collect_response(self, max_wait: float = RESPONSE_MAX_WAIT,
+                           quiet_gap: Optional[float] = RESPONSE_QUIET_GAP,
+                           stop_pattern: Optional[re.Pattern] = None) -> str:
+        """
+        応答を読み集める。
+        - stop_pattern を指定した場合、そのパターンが出現した時点で即座に読み取りを終える
+          (センサ測定などで行と行の間隔が空いても、目的の行が来るまで待てる)。
+        - stop_pattern が無い場合は、quiet_gap秒だけ新規データが来なければ完了とみなす。
+        - どちらの場合も max_wait を超えたら強制的に終了する(ハードタイムアウト)。
+        """
+        deadline = time.monotonic() + max_wait
+        buffer = bytearray()
+        last_received = time.monotonic()
 
-        line = self.ser.readline()
-        if not line:
+        while True:
+            chunk = self.ser.read(256)
+            now = time.monotonic()
+            if chunk:
+                buffer.extend(chunk)
+                last_received = now
+                if stop_pattern and stop_pattern.search(buffer.decode("ascii", errors="ignore")):
+                    break
+            if now >= deadline:
+                break
+            if not stop_pattern and buffer and (now - last_received) >= quiet_gap:
+                break
+
+        return buffer.decode("ascii", errors="ignore")
+
+    def read_temperature(self) -> float:
+        """
+        'T'コマンドを送信し、応答(複数行のデバッグ出力)から温度を抽出して返す。
+        実機の応答例:
+          "Received: T\\nReading temperature on demand...\\n"
+          "Raw temperature: 375 (1LSB=1/16C)\\nTEMP = 23.43 C\\n"
+        センサ測定の遅延で行と行の間隔が空くことがあるため、"TEMP = xx.xx C" 行が
+        出現するまで(最大 RESPONSE_MAX_WAIT 秒)待って抽出する。
+        """
+        self.ser.reset_input_buffer()
+        self._write_line("T")
+
+        text = self._collect_response(max_wait=RESPONSE_MAX_WAIT, stop_pattern=TEMP_PATTERN)
+        if not text:
             raise TimeoutError("マイコンから温度応答がありませんでした(タイムアウト)")
 
-        text = line.decode("ascii", errors="ignore").strip()
-        if not text:
-            raise ValueError("空の応答を受信しました")
+        matches = TEMP_PATTERN.findall(text)
+        if not matches:
+            raise ValueError(f"温度応答の解析に失敗しました。受信内容: {text!r}")
 
-        try:
-            integer_part, decimal_part = text.split(",")
-            temperature = float(f"{integer_part}.{decimal_part}")
-        except ValueError as e:
-            raise ValueError(f"温度応答の解析に失敗しました: '{text}'") from e
-
-        return temperature
+        return float(matches[-1])
 
     def blink(self, command: str):
         """LED点滅コマンド列を送信し、マイコン側の休止時間の合計だけ待機する"""
-        self._write(command)
+        self._write_line(command)
         pause_count = command.count("#")
         time.sleep(pause_count * BLINK_UNIT_SEC)
+        # LEDコマンドに伴うデバッグ出力等が残っていれば、次回の'T'応答解析に
+        # 混ざらないよう読み捨てておく
+        self._collect_response(max_wait=0.5, quiet_gap=0.2)
 
 
 # ----------------------------------------------------------------------------
