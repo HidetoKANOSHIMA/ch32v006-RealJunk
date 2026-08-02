@@ -1,20 +1,27 @@
 """
 Real Junk (RJ) - Perceive -> Decide -> Act ループ 最小実装
 ------------------------------------------------------
-ステップ1: LLMを使わず、if文によるダミー判断でループ全体の配線を確認する。
-ステップ2（今後）: decide_led() の中身をローカルLLM呼び出しに差し替える。
+ステップ1: if文によるダミー判断でループ全体の配線を確認 済み。
+ステップ2（今回）: decide_led() の中身をローカルLLM(Ollama)呼び出しに差し替え。
 
 必要ライブラリ:
-    pip install pyserial
+    pip install pyserial ollama
+    ※ Ollama本体を起動し、モデル(gemma4:e4b等)をpull済みであること
 """
 
+import re
+
+import ollama
 import serial
 import time
 
+# ==== LLM設定 ====
+LLM_MODEL = "gemma4:e4b"
+
 # ==== 設定（環境に合わせて変更してください） ====
-SERIAL_PORT = "/dev/tty.usbmodemBDD28F0643042"      # ご自身のUSBシリアル変換のデバイス名に変更
-BAUD_RATE = 115200                                  # readme記載の値。通信できなければ 115200 等も試してください
-LOOP_INTERVAL_SEC = 5                               # 何秒おきに温度を確認するか
+SERIAL_PORT = "/dev/tty.usbmodemBDD28F0643042"  # ご自身のUSBシリアル変換のデバイス名に変更
+BAUD_RATE = 115200                              # readme記載の値。通信できなければ 115200 等も試してください
+LOOP_INTERVAL_SEC = 5                           # 何秒おきに温度を確認するか
 
 # LED色 -> (点灯コマンド, 消灯コマンド)
 LED_COMMANDS = {
@@ -59,12 +66,34 @@ def read_temperature(ser: serial.Serial) -> float:
 
 def decide_led(temperature: float) -> str:
     """
-    ダミー判断ロジック（後でLLM呼び出しに差し替える部分）。
-    温度に応じて "red" / "yellow" / "green" を返す。
+    ローカルLLMに温度を渡し、"red" / "yellow" / "green" のいずれかを判断させる。
+    応答の解釈に失敗した場合は、以前のダミー判断ロジックにフォールバックする。
     """
-    if temperature >= 30.0:
+    prompt = (
+        f"現在の温度は{temperature:.2f}度です。"
+        "これは成人男子が寒いと感じる温度です。"        # これを入れると判断が揺らぐ
+        "この温度を示すLEDの色として最も適切なものを "
+        "red, yellow, green の3語のうち1語だけで答えてください。"
+        "説明や理由は不要です。単語のみを返してください。"
+    )
+
+    response = ollama.chat(
+        model=LLM_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        think=True,
+    )
+    reply = response["message"]["content"]
+
+    # 応答文の中から red/yellow/green のいずれかを拾う（前後に余計な語が付いても対応）
+    match = re.search(r"\b(red|yellow|green)\b", reply, re.IGNORECASE)
+    if match:
+        print(f"  [LLM応答] {reply!r} -> LED: {match.group(1).lower()}")
+        return match.group(1).lower()
+
+    print(f"  [警告] LLM応答を解釈できませんでした: {reply!r} -> フォールバック判断を使用")
+    if temperature >= 28.0:
         return "red"
-    elif temperature >= 21.9:
+    elif temperature >= 22.0:
         return "yellow"
     else:
         return "green"
