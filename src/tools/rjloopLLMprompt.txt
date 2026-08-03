@@ -1,0 +1,5 @@
+室内は{temperature:.2f}度、外は{outdoor_temperature}です。
+28度を超えると私は暑いと感じ、外気温が室温より高いと今後さらに暑くなると考えます。
+この感覚に基づいて判断してください。
+color: <red/yellow/green>
+trend: <rising/falling/stable>
