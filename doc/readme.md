@@ -104,3 +104,39 @@ Open-Meteo（APIキー不要）から現在地（習志野市付近に仮設定�
 この感覚に基づいて判断してください。
 color: <red/yellow/green>
 trend: <rising/falling/stable>
+
+### rjloopLLM_MCP.py
+構造が大きく変わったので、変更点を整理します。
+
+これまで（テキスト応答＋正規表現パース）
+プロンプトで「color: を含む2行だけ返して」とお願いし、返ってきた自由文をPython側で正規表現でこじ開けて解釈していました。
+
+今回（Function Calling）
+
+get_temperatureとset_ledをdescription付きのツールとして定義（TOOLS）
+LLMには温度の数値を渡さず、外気温の文脈だけ与えて「まず温度を確認してから、必要なら色を変えて」とだけ指示
+LLMが自分の判断でget_temperatureを呼ぶ→Python側が実際にシリアルで温度を取得して結果を返す→LLMがその結果を見てset_ledを呼ぶ→Python側が実際にLEDを切り替える、という**往復（run_agent_step）**をLLM自身が組み立てます
+Python側（tool_get_temperature/tool_set_led）は「呼ばれた通りに実行して結果を返すだけ」の実行係に徹しています
+無限ループ防止のためMAX_AGENT_TURNSで往復回数に上限を設けています
+
+一番の違いは、「温度を確認するかどうか」自体もLLMの判断に委ねた点です。以前は「Pythonが先に温度を取ってからLLMに渡す」固定順序でしたが、今回はLLMが「まず温度を見るべきだ」と自分で判断してツールを呼ぶところから始まります。実際に動かしてみると、[ツール実行] get_temperature({}) -> {...}のようなログが先に出て、その後にset_ledが呼ばれる様子が見えるはずです。
+
+#### 実行結果(呼び出し側の言いなりではなくLLMの判断でtoolを呼び出し、LEDの点灯も判断している)
+
+hidetokanoshima@Mac-mini toolsMCP % python3 rjloopLLM_MCP.py 
+接続しました: /dev/tty.usbmodemBDD28F0643042 @ 115200bps
+外気温: 22.6度
+  [ツール実行] get_temperature({}) -> {'temperature_celsius': 23.81}
+  [ツール実行] set_led({'color': 'green'}) -> {'result': 'ok', 'color': 'green'}
+エージェントの報告: 室温が23.81℃であったため、通常の範囲内と判断し、LEDを緑（green）に設定しました。
+外気温: 22.6度
+  [ツール実行] get_temperature({}) -> {'temperature_celsius': 23.75}
+  [ツール実行] set_led({'color': 'green'}) -> {'result': 'ok', 'color': 'green'}
+エージェントの報告: 室温が23.75℃であったため、平常を示す緑色（green）のLEDに切り替えました。
+外気温: 22.6度
+  [ツール実行] get_temperature({}) -> {'temperature_celsius': 23.68}
+  [ツール実行] set_led({'color': 'green'}) -> {'result': 'ok', 'color': 'green'}
+エージェントの報告: 室温が23.68℃であったため、適切な状態であると判断し、LEDを緑色に点灯させました。
+^C
+終了します。全LED消灯。
+hidetokanoshima@Mac-mini toolsMCP % 
