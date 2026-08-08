@@ -16,7 +16,7 @@ MCPSserver.py をサブプロセスとして起動し、標準入出力(stdio)�
     
 使い方
 > ollama serve --model gemma4:e4b
-> python3 MCPServerAgent.py
+> python3 MCPClientAgent.py
 """
 
 import asyncio
@@ -27,7 +27,7 @@ from mcp.client.stdio import stdio_client
 
 LLM_MODEL = "gemma4:e4b"
 MAX_AGENT_TURNS = 5          # 1サイクルあたりのツール往復の上限（暴走防止）
-LOOP_INTERVAL_SEC = 15       # 何秒おきにエージェントを1サイクル動かすか
+LOOP_INTERVAL_SEC = 3600       # 何秒おきにエージェントを1サイクル動かすか
 
 AGENT_INSTRUCTION = (
     "あなたは室内のLED表示を管理するエージェントです。\n"

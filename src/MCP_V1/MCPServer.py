@@ -15,10 +15,22 @@ API に破壊的変更が入っている。このコードは安定している 
     pip install "mcp[cli]<2" pyserial
 """
 
+import json
 import time
-
+import urllib.error
+import urllib.request
 import serial
 from mcp.server.fastmcp import FastMCP
+
+# ==== 気象情報設定（Open-Meteo, APIキー不要） ====
+# デフォルトは北海道岩見沢市付近。必要に応じて変更してください。
+WEATHER_LATITUDE =  43.2121677103198
+WEATHER_LONGITUDE = 141.74252667067037
+WEATHER_API_URL = (
+    "https://api.open-meteo.com/v1/forecast"
+    f"?latitude={WEATHER_LATITUDE}&longitude={WEATHER_LONGITUDE}"
+    "&current=temperature_2m"
+)
 
 # ==== シリアル設定（環境に合わせて変更してください） ====
 SERIAL_PORT = "/dev/tty.usbmodemBDD28F0643042"
@@ -50,6 +62,21 @@ def _get_serial() -> serial.Serial:
 def _send_command(command: str) -> None:
     _get_serial().write((command + "\n").encode("ascii"))
 
+
+@mcp.tool()
+def get_outdoor_temperature() -> str:
+    """
+    Open-Meteo API から現在の外気温を取得する。
+    取得できなければ "不明" を返し、ループは継続する。
+    """
+    try:
+        with urllib.request.urlopen(WEATHER_API_URL, timeout=5) as res:
+            data = json.loads(res.read().decode("utf-8"))
+        temp = data["current"]["temperature_2m"]
+        return f"{temp:.1f}度"
+    except (urllib.error.URLError, KeyError, ValueError) as e:
+        print(f"  [警告] 外気温の取得に失敗しました: {e}")
+        return "不明"
 
 @mcp.tool()
 def get_temperature() -> dict:
